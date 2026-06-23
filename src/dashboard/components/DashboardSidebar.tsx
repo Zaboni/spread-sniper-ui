@@ -12,6 +12,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import ShieldIcon from '@mui/icons-material/Shield';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import InsightsIcon from '@mui/icons-material/Insights';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { matchPath, useLocation } from 'react-router-dom';
 import DashboardSidebarContext from '../context/DashboardSidebarContext';
@@ -164,6 +165,13 @@ export default function DashboardSidebar({
               icon={<InsightsIcon />}
               href="/dashboard/signal-engine"
               selected={!!matchPath('/dashboard/signal-engine', pathname)}
+            />
+            <DashboardSidebarPageItem
+              id="unified"
+              title="Unified"
+              icon={<CompareArrowsIcon />}
+              href="/dashboard/unified"
+              selected={!!matchPath('/dashboard/unified', pathname)}
             />
             <DashboardSidebarDividerItem />
             <DashboardSidebarHeaderItem>Analytics</DashboardSidebarHeaderItem>

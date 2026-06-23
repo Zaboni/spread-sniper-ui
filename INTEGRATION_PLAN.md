@@ -56,19 +56,24 @@ Each phase is small enough to finish in a session or two. Each has explicit acce
 **What to build**:
 - A `data/collectors/signal_engine_client.py` that fetches from Phase 1's endpoint. Standard collector pattern matching `alpaca_client.py` etc.
 - New feature columns in Spread Sniper's feature pipeline:
-  - `se_regime_label`, `se_regime_probs_*`
   - `se_iv_rv_spread`
-  - `se_news_sentiment_daily`
+  - `se_news_sentiment_daily`, `se_news_article_count`
   - `se_fomc_hawkish_score`
   - `se_decay_alerts_active` (boolean)
-  - `se_regime_disagrees` (boolean: True when Signal Engine HMM and Spread Sniper's own regime classifier label differently)
+  - `se_data_stale` (boolean passthrough from API)
 - Feature flag: `USE_SIGNAL_ENGINE_FEATURES` in `config/settings.py`. Default off until verified.
 - Graceful degradation: if Signal Engine endpoint is down or stale, scanner runs without those features and logs the absence.
+
+**QUARANTINED (not extracted)**:
+- `se_regime_label`, `se_regime_prob_*`, `se_regime_disagrees`
+- **Reason**: Signal Engine's HMM has a sticky-crisis bug. The transition matrix has P(crisis→low_vol)=0.00%, making crisis a trap state. Once the HMM enters crisis, it cannot transition directly to low_vol — it must pass through high_vol first. This caused the HMM to remain stuck in "crisis" for ~2 months (May-Jun 2026) despite VIX at 16-18 and SPY making new highs.
+- **Evidence**: May 11-22, 2026 — HMM labeled "crisis" with 100% probability while VIX was 16-18, 21d realized vol was 9-10%, and SPY was at all-time highs. Spread Sniper correctly labeled this period as "calm_bull".
+- **Resolution**: Do not extract HMM regime fields until the transition matrix bug is fixed in Signal Engine. See `signal-engine/STATUS.md` for tracking.
 
 **Acceptance criteria**:
 - Spread Sniper's daily scanner runs cleanly with the feature flag both on and off.
 - New tests verify the client handles success, timeout, 5xx, and stale-data cases.
-- The `se_regime_disagrees` flag fires on at least one historical date where it should (sanity check).
+- ~~The `se_regime_disagrees` flag fires on at least one historical date where it should (sanity check).~~ **BLOCKED**: HMM regime quarantined.
 - No Signal Engine feature is passed into the SpreadScorer or strategy gates yet. Phase 2 is *fetching* only. Using them comes in Phase 3.
 
 **Out of scope**: Letting Signal Engine features influence trade decisions (Phase 3). UI (Phase 4).
@@ -85,7 +90,7 @@ Each phase is small enough to finish in a session or two. Each has explicit acce
 
 **What to build (after protocol is written and committed)**:
 - Specific integration points to consider (pick a minimal set, don't kitchen-sink):
-  - When Signal Engine HMM says `crisis` and Spread Sniper's regime says `calm_bull`, log a `WARN` alert and require manual confirmation for any new trade entry.
+  - ~~When Signal Engine HMM says `crisis` and Spread Sniper's regime says `calm_bull`, log a `WARN` alert and require manual confirmation for any new trade entry.~~ **BLOCKED**: HMM regime quarantined due to sticky-crisis bug. Revisit when transition matrix is fixed.
   - When `se_decay_alerts_active` is True for the regime model, downsize new positions by 50%.
   - When `se_iv_rv_spread` and Spread Sniper's own IV-RV calculation diverge by more than X std dev, log a `WARN` (don't auto-act — surface the disagreement).
   - When `se_fomc_hawkish_score` is in the extreme tails (|score| > 0.6) and FOMC is within 24h, no new premium-selling entries.

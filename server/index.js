@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import pg from 'pg';
 import { createReadStream, existsSync, statSync } from 'fs';
 import { parse } from 'csv-parse';
+import { computeIvRvSpread } from './utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -687,20 +688,9 @@ app.get('/api/signal-engine/snapshot', async (req, res) => {
     const spyRows = resultMap.spyHistory.rows.reverse();
     const spyCurrent = spyRows.length > 0 ? parseFloat(spyRows[spyRows.length - 1].close) : null;
 
-    // Compute current RV from last 22 prices
-    let rv = null;
-    let ivRvSpread = null;
-    if (spyRows.length >= 22 && vixCurrent !== null) {
-      const prices = spyRows.slice(-22).map(r => parseFloat(r.close));
-      const logReturns = [];
-      for (let i = 1; i < prices.length; i++) {
-        logReturns.push(Math.log(prices[i] / prices[i - 1]));
-      }
-      const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
-      const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / logReturns.length;
-      rv = Math.sqrt(variance) * Math.sqrt(252) * 100;
-      ivRvSpread = vixCurrent - rv;
-    }
+    // Compute current RV and IV-RV spread from last 22 prices
+    const prices = spyRows.slice(-22).map(r => parseFloat(r.close));
+    const { rv, ivRvSpread } = computeIvRvSpread(vixCurrent, prices);
 
     // Compute IV-RV spread history (align VIX and SPY by date)
     const ivRvHistory = [];
@@ -984,6 +974,324 @@ app.get('/api/signal-engine/regime-history', async (req, res) => {
     });
   } catch (error) {
     console.error('Signal Engine regime history error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// UNIFIED ENDPOINT (Phase 4: both systems side by side)
+// =============================================================================
+
+app.get('/api/unified/snapshot', async (req, res) => {
+  const startTime = Date.now();
+  const timings = {};
+
+  try {
+    // Define all queries - run in parallel
+    const queryStart = Date.now();
+
+    const queries = {
+      // Signal Engine queries
+      seRegime: pool.query(`
+        SELECT ts, regime_label, regime_probs
+        FROM signal_engine.regimes
+        ORDER BY ts DESC
+        LIMIT 1
+      `),
+      seFomc: pool.query(`
+        SELECT event_date, event_type, hawkish_score
+        FROM signal_engine.fomc_events
+        ORDER BY event_date DESC
+        LIMIT 1
+      `),
+      seNews: pool.query(`
+        SELECT
+          n.ts as published_at,
+          n.headline,
+          ns.directional_sentiment,
+          ns.magnitude
+        FROM signal_engine.news_scores ns
+        JOIN signal_engine.news n ON ns.news_id = n.id
+        ORDER BY n.ts DESC
+        LIMIT 5
+      `),
+      seDecayAlerts: pool.query(`
+        SELECT id, created_at, source, alert_level, alert_message
+        FROM signal_engine.decay_alerts
+        WHERE resolved_at IS NULL
+          AND alert_level IN ('warning', 'critical')
+        ORDER BY created_at DESC
+        LIMIT 5
+      `),
+      sePrediction: pool.query(`
+        SELECT id, made_at, horizon, predicted_direction, predicted_prob, source, regime_at_pred
+        FROM signal_engine.predictions
+        ORDER BY made_at DESC
+        LIMIT 1
+      `),
+      seVix: pool.query(`
+        SELECT ts, value
+        FROM signal_engine.macro
+        WHERE series_id = 'VIXCLS'
+        ORDER BY ts DESC
+        LIMIT 1
+      `),
+      seSpyPrices: pool.query(`
+        SELECT ts, close
+        FROM signal_engine.prices
+        WHERE symbol = 'SPY'
+        ORDER BY ts DESC
+        LIMIT 22
+      `),
+
+      // Spread Sniper queries
+      ssRegime: pool.query(`
+        SELECT regime, probability, timestamp
+        FROM regime_history
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `),
+      ssFeatures: pool.query(`
+        SELECT ts, iv_rv_spread, atm_iv, rv_21
+        FROM features
+        WHERE symbol = 'SPY' AND iv_rv_spread IS NOT NULL
+        ORDER BY ts DESC
+        LIMIT 1
+      `),
+      ssOpenPositions: pool.query(`
+        SELECT COUNT(*) as count
+        FROM trades
+        WHERE status = 'open'
+      `),
+      ssExposure: pool.query(`
+        SELECT
+          COALESCE(SUM(ABS(entry_price * quantity)), 0) as total_exposure
+        FROM trades
+        WHERE status = 'open'
+      `),
+      ssWeeklyPnL: pool.query(`
+        SELECT COALESCE(SUM(pnl), 0) as weekly_pnl
+        FROM trades
+        WHERE status = 'closed'
+          AND close_time >= DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      ssTotalPnL: pool.query(`
+        SELECT COALESCE(SUM(pnl), 0) as total_pnl
+        FROM trades
+        WHERE status = 'closed'
+      `),
+    };
+
+    // Time each query
+    const queryNames = Object.keys(queries);
+    const queryPromises = queryNames.map(async (name) => {
+      const qStart = Date.now();
+      try {
+        const result = await queries[name];
+        timings[name] = Date.now() - qStart;
+        return { name, result, error: null };
+      } catch (err) {
+        timings[name] = Date.now() - qStart;
+        return { name, result: { rows: [] }, error: err.message };
+      }
+    });
+
+    const results = await Promise.all(queryPromises);
+    const resultMap = Object.fromEntries(results.map(r => [r.name, r.result]));
+
+    timings._queries = Date.now() - queryStart;
+
+    // Process Signal Engine regime
+    const seRegimeRow = resultMap.seRegime.rows[0];
+    const seRegime = seRegimeRow ? {
+      label: seRegimeRow.regime_label,
+      probs: seRegimeRow.regime_probs,
+      timestamp: seRegimeRow.ts,
+      quarantined: true, // HMM is quarantined due to sticky-crisis bug
+      quarantineReason: 'HMM transition matrix bug: P(crisis→low_vol)=0%. Do not use for trading decisions.',
+    } : null;
+
+    // Process SE VIX and compute SE IV-RV spread
+    const seVixRow = resultMap.seVix.rows[0];
+    const seVix = seVixRow ? parseFloat(seVixRow.value) : null;
+
+    // Compute SE RV and IV-RV spread using shared util
+    const spyRows = resultMap.seSpyPrices.rows;
+    const sePrices = spyRows.map(r => parseFloat(r.close)).reverse();
+    const { rv: seRv, ivRvSpread: seIvRvSpread } = computeIvRvSpread(seVix, sePrices);
+
+    // Process SE FOMC
+    const seFomcRow = resultMap.seFomc.rows[0];
+    const seFomc = seFomcRow ? {
+      eventDate: seFomcRow.event_date,
+      eventType: seFomcRow.event_type,
+      hawkishScore: seFomcRow.hawkish_score ? parseFloat(seFomcRow.hawkish_score) : null,
+    } : null;
+
+    // Process SE news
+    const seNews = resultMap.seNews.rows.map(r => ({
+      headline: r.headline,
+      scoredAt: r.published_at,  // Using publication date, not scoring date
+      sentiment: parseFloat(r.directional_sentiment),
+      magnitude: r.magnitude,
+    }));
+
+    // Process SE decay alerts
+    const seDecayAlerts = resultMap.seDecayAlerts.rows.map(r => ({
+      id: r.id,
+      createdAt: r.created_at,
+      source: r.source,
+      alertLevel: r.alert_level,
+      alertMessage: r.alert_message,
+    }));
+    const decayAlertsActive = seDecayAlerts.length > 0;
+
+    // Process SE prediction
+    const sePredRow = resultMap.sePrediction.rows[0];
+    const sePrediction = sePredRow ? {
+      id: sePredRow.id,
+      madeAt: sePredRow.made_at,
+      horizon: sePredRow.horizon,
+      predictedDirection: sePredRow.predicted_direction,
+      predictedProb: parseFloat(sePredRow.predicted_prob),
+      source: sePredRow.source,
+      regimeAtPred: sePredRow.regime_at_pred,
+    } : null;
+
+    // Process Spread Sniper regime
+    const ssRegimeRow = resultMap.ssRegime.rows[0];
+    const ssRegime = ssRegimeRow ? {
+      label: ssRegimeRow.regime,
+      confidence: parseFloat(ssRegimeRow.probability),
+      timestamp: ssRegimeRow.timestamp,
+    } : null;
+
+    // Process SS features (IV-RV)
+    const ssFeaturesRow = resultMap.ssFeatures.rows[0];
+    const ssIvRvSpread = ssFeaturesRow ? parseFloat(ssFeaturesRow.iv_rv_spread) * 100 : null; // Convert to pp
+
+    // Process SS trading state
+    const baseCash = 5000;
+    const totalPnL = parseFloat(resultMap.ssTotalPnL.rows[0]?.total_pnl || 0);
+    const accountValue = baseCash + totalPnL;
+    const openPositions = parseInt(resultMap.ssOpenPositions.rows[0]?.count || 0);
+    const exposure = parseFloat(resultMap.ssExposure.rows[0]?.total_exposure || 0);
+    const exposurePercent = accountValue > 0 ? (exposure / accountValue) * 100 : 0;
+    const weeklyPnL = parseFloat(resultMap.ssWeeklyPnL.rows[0]?.weekly_pnl || 0);
+    const weeklyDrawdownPercent = baseCash > 0 ? (weeklyPnL / baseCash) * 100 : 0;
+    const circuitBreakerActive = weeklyDrawdownPercent < -5;
+
+    // Compute disagreements
+    const ivRvDivergence = (seIvRvSpread !== null && ssIvRvSpread !== null)
+      ? Math.abs(seIvRvSpread - ssIvRvSpread)
+      : null;
+
+    const regimeDisagrees = (seRegime && ssRegime)
+      ? seRegime.label !== ssRegime.label
+      : null;
+
+    // Phase 3 rule states (per locked protocol backtest results)
+    const phase3Rules = [
+      {
+        name: 'DECAY_DOWNSIZE',
+        enabled: false,
+        status: 'UNDERPOWERED',
+        reason: 'N=0 decay alerts in history',
+        currentValue: decayAlertsActive ? 'ACTIVE' : 'INACTIVE',
+        threshold: 'any warning/critical alert',
+        action: '50% position sizing',
+      },
+      {
+        name: 'IVRV_DIVERGENCE',
+        enabled: false,
+        status: 'FAIL',
+        reason: '28.6% divergence rate (methodology mismatch: VIX vs ATM IV)',
+        currentValue: ivRvDivergence !== null ? `${ivRvDivergence.toFixed(2)}pp` : 'N/A',
+        threshold: '> 2.0pp',
+        action: 'log warning',
+      },
+      {
+        name: 'FOMC_GATE',
+        enabled: false,
+        status: 'UNDERPOWERED',
+        reason: 'N=1 extreme meeting out of 14',
+        currentValue: seFomc?.hawkishScore !== null ? `|${seFomc.hawkishScore.toFixed(2)}|` : 'N/A',
+        threshold: '> 0.25 AND FOMC within 24h',
+        action: 'block premium-selling entries',
+      },
+    ];
+
+    timings._total = Date.now() - startTime;
+
+    // Log timings on first request or if any query is slow
+    const slowQueries = Object.entries(timings).filter(([k, v]) => !k.startsWith('_') && v > 100);
+    if (slowQueries.length > 0 || !global._unifiedTimingsLogged) {
+      console.log('Unified snapshot query timings:', timings);
+      if (slowQueries.length > 0) {
+        console.warn('SLOW QUERIES (>100ms):', slowQueries.map(([k, v]) => `${k}: ${v}ms`).join(', '));
+      }
+      global._unifiedTimingsLogged = true;
+    }
+
+    res.json({
+      timestamp: new Date().toISOString(),
+
+      // Signal Engine context
+      signalEngine: {
+        regime: seRegime,
+        vol: {
+          vix: seVix,
+          rv: seRv !== null ? parseFloat(seRv.toFixed(2)) : null,
+          ivRvSpread: seIvRvSpread !== null ? parseFloat(seIvRvSpread.toFixed(2)) : null,
+          methodology: 'VIX - 21d realized vol',
+        },
+        fomc: seFomc,
+        news: seNews,
+        decayAlerts: seDecayAlerts,
+        prediction: sePrediction,
+      },
+
+      // Spread Sniper state
+      spreadSniper: {
+        regime: ssRegime,
+        lastClassificationTimestamp: ssRegimeRow?.timestamp || null,
+        ivRvSpread: ssIvRvSpread !== null ? parseFloat(ssIvRvSpread.toFixed(2)) : null,
+        ivRvMethodology: 'ATM IV - 21d realized vol',
+        trading: {
+          openPositions,
+          accountValue,
+          exposure,
+          exposurePercent: parseFloat(exposurePercent.toFixed(1)),
+          weeklyPnL,
+          weeklyDrawdownPercent: parseFloat(weeklyDrawdownPercent.toFixed(1)),
+          circuitBreakerActive,
+        },
+      },
+
+      // Disagreements
+      disagreements: {
+        regime: {
+          disagrees: regimeDisagrees,
+          seLabel: seRegime?.label || null,
+          ssLabel: ssRegime?.label || null,
+          seQuarantined: true,
+          quarantineReason: 'HMM transition matrix bug: P(crisis→low_vol)=0%',
+        },
+        ivRv: {
+          seValue: seIvRvSpread !== null ? parseFloat(seIvRvSpread.toFixed(2)) : null,
+          ssValue: ssIvRvSpread !== null ? parseFloat(ssIvRvSpread.toFixed(2)) : null,
+          divergence: ivRvDivergence !== null ? parseFloat(ivRvDivergence.toFixed(2)) : null,
+          methodologyNote: 'SE uses VIX as IV proxy; SS uses ATM IV from options. Systematic offset expected.',
+        },
+      },
+
+      // Phase 3 rules
+      phase3Rules,
+
+      _timings: timings,
+    });
+  } catch (error) {
+    console.error('Unified snapshot error:', error);
     res.status(500).json({ error: error.message });
   }
 });

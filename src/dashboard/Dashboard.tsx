@@ -10,6 +10,7 @@ import Trades from './pages/Trades';
 import Risk from './pages/Risk';
 import RegimeHistory from './pages/RegimeHistory';
 import SignalEngine from './pages/SignalEngine';
+import Unified from './pages/Unified';
 import DashboardSettings from './pages/DashboardSettings';
 import { sidebarCustomizations } from '../theme/customizations/sidebar';
 
@@ -31,6 +32,7 @@ export default function Dashboard(props: { disableCustomTheme?: boolean }) {
             <Route path="risk" element={<Risk />} />
             <Route path="regime" element={<RegimeHistory />} />
             <Route path="signal-engine" element={<SignalEngine />} />
+            <Route path="unified" element={<Unified />} />
             <Route path="settings" element={<DashboardSettings />} />
             <Route path="*" element={<Overview />} />
           </Route>

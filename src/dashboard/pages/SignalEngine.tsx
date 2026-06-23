@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Skeleton from '@mui/material/Skeleton';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import {
   ComposedChart,
   LineChart,
@@ -38,10 +39,6 @@ const colors = {
   orange: '#f59e0b',
   yellow: '#fbbf24',
   blue: '#3b82f6',
-  text: '#e2e8f0',
-  textSecondary: '#94a3b8',
-  cardBg: 'rgba(15, 18, 24, 0.6)',
-  border: 'rgba(148, 163, 184, 0.15)',
 };
 
 const regimeColors: Record<string, string> = {
@@ -105,96 +102,145 @@ function getSentimentColor(sentiment: number, magnitude: string): string {
 }
 
 // =============================================================================
-// TODAY'S LEAN CARD
+// LEAN & REGIME CARD (combined - saves vertical space)
 // =============================================================================
 
-interface TodaysLeanCardProps {
+interface LeanAndRegimeCardProps {
   prediction: SnapshotPrediction | null;
+  regime: SnapshotRegime | null;
 }
 
-const TodaysLeanCard = memo(function TodaysLeanCard({ prediction }: TodaysLeanCardProps) {
-  if (!prediction) {
-    return (
-      <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, mb: 2 }}>
-        <CardContent sx={{ py: 2 }}>
-          <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
-            Today's Lean
-          </Typography>
-          <Typography sx={{ fontSize: '1rem', color: colors.textSecondary }}>
-            No prediction yet
-          </Typography>
-        </CardContent>
-      </Card>
-    );
-  }
+const LeanAndRegimeCard = memo(function LeanAndRegimeCard({ prediction, regime }: LeanAndRegimeCardProps) {
+  // Prediction values
+  const isBull = prediction?.predictedDirection === 'bull';
+  const isBear = prediction?.predictedDirection === 'bear';
+  const directionColor = isBull ? colors.green : isBear ? colors.red : 'text.secondary';
+  const directionLabel = prediction?.predictedDirection.toUpperCase() || '--';
+  const probPct = prediction ? (prediction.predictedProb * 100).toFixed(1) : '--';
 
-  const isBull = prediction.predictedDirection === 'bull';
-  const isBear = prediction.predictedDirection === 'bear';
-  const directionColor = isBull ? colors.green : isBear ? colors.red : colors.textSecondary;
-  const directionLabel = prediction.predictedDirection.toUpperCase();
-  const probPct = (prediction.predictedProb * 100).toFixed(1);
-  const regimeColor = prediction.regimeAtPred ? regimeColors[prediction.regimeAtPred] : colors.textSecondary;
-  const regimeLabel = prediction.regimeAtPred ? regimeLabels[prediction.regimeAtPred] : '--';
+  // Regime values
+  const regimeColor = regime ? regimeColors[regime.label] || 'text.secondary' : 'text.secondary';
+  const probs = regime?.probs || {};
 
   return (
-    <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, mb: 2 }}>
-      <CardContent sx={{ py: 2.5 }}>
-        <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5 }}>
-          Today's Lean
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-          {/* Direction + Probability */}
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-            <Typography
-              sx={{
-                fontSize: '2.5rem',
-                fontWeight: 700,
-                color: directionColor,
-                lineHeight: 1,
-                textShadow: `0 0 30px ${directionColor}50`,
-                transition: 'color 0.3s ease',
-              }}
-            >
-              {directionLabel}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: '2rem',
-                fontWeight: 600,
-                fontFamily: monoFont,
-                color: directionColor,
-                lineHeight: 1,
-                transition: 'color 0.3s ease',
-              }}
-            >
-              {probPct}%
-            </Typography>
-          </Box>
-
-          {/* Source */}
+    <Card sx={{ mb: 2 }}>
+      <CardContent sx={{ py: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+          {/* Left: Today's Lean */}
           <Box>
-            <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Source
+            <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+              Today's Lean
             </Typography>
-            <Typography sx={{ fontSize: '0.85rem', fontFamily: monoFont, color: colors.text }}>
-              {prediction.source}
-            </Typography>
+            {prediction ? (
+              <>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, mb: 1 }}>
+                  <Typography sx={{
+                    fontSize: '1.75rem',
+                    fontWeight: 700,
+                    color: directionColor,
+                    lineHeight: 1,
+                    textShadow: `0 0 20px ${directionColor}40`,
+                  }}>
+                    {directionLabel}
+                  </Typography>
+                  <Typography sx={{
+                    fontSize: '1.25rem',
+                    fontWeight: 600,
+                    fontFamily: monoFont,
+                    color: directionColor,
+                    lineHeight: 1,
+                  }}>
+                    {probPct}%
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  <Box>
+                    <Typography sx={{ fontSize: '0.55rem', color: 'text.secondary', textTransform: 'uppercase' }}>
+                      Source
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.8rem', fontFamily: monoFont, color: 'text.primary' }}>
+                      {prediction.source}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: '0.55rem', color: 'text.secondary', textTransform: 'uppercase' }}>
+                      Made
+                    </Typography>
+                    <Typography sx={{ fontSize: '0.8rem', fontFamily: monoFont, color: 'text.secondary' }}>
+                      {formatDate(prediction.madeAt)} {formatTime(prediction.madeAt)}
+                    </Typography>
+                  </Box>
+                </Box>
+              </>
+            ) : (
+              <Typography sx={{ fontSize: '1.25rem', fontWeight: 600, color: 'text.secondary' }}>
+                No prediction yet
+              </Typography>
+            )}
           </Box>
 
-          {/* Regime Context */}
+          {/* Right: Current Regime */}
           <Box>
-            <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Regime
+            <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+              Current Regime
             </Typography>
-            <Typography sx={{ fontSize: '0.85rem', fontWeight: 600, color: regimeColor }}>
-              {regimeLabel}
-            </Typography>
+            {regime ? (
+              <>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, mb: 1 }}>
+                  <Typography sx={{
+                    fontSize: '1.75rem',
+                    fontWeight: 700,
+                    color: regimeColor,
+                    lineHeight: 1,
+                    textShadow: `0 0 20px ${regimeColor}40`,
+                  }}>
+                    {regimeLabels[regime.label] || regime.label.toUpperCase()}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', fontFamily: monoFont }}>
+                    {formatDate(regime.timestamp)}
+                  </Typography>
+                </Box>
+                {/* Compact probability bars */}
+                <Box sx={{ display: 'flex', gap: 1.5 }}>
+                  {(['low_vol', 'high_vol', 'crisis'] as const).map(key => {
+                    const prob = (probs as RegimeProbs)[key] || 0;
+                    const barColor = regimeColors[key];
+                    return (
+                      <Box key={key} sx={{ flex: 1, minWidth: 60 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
+                          <Typography sx={{ fontSize: '0.55rem', color: barColor, fontWeight: 500 }}>
+                            {regimeLabels[key]}
+                          </Typography>
+                          <Typography sx={{ fontSize: '0.55rem', fontFamily: monoFont, color: 'text.secondary' }}>
+                            {(prob * 100).toFixed(0)}%
+                          </Typography>
+                        </Box>
+                        <Box sx={{ height: 4, bgcolor: 'rgba(148, 163, 184, 0.1)', borderRadius: 0.5, overflow: 'hidden' }}>
+                          <Box sx={{ height: '100%', width: `${prob * 100}%`, bgcolor: barColor, borderRadius: 0.5 }} />
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </>
+            ) : (
+              <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+            )}
           </Box>
+        </Box>
 
-          {/* Timestamp */}
-          <Box sx={{ ml: 'auto' }}>
-            <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont }}>
-              {formatDate(prediction.madeAt)} {formatTime(prediction.madeAt)}
+        {/* Quarantine Warning - full width below */}
+        <Box sx={{
+          mt: 2,
+          p: 1,
+          borderRadius: 0.5,
+          bgcolor: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.2)',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+            <WarningAmberIcon sx={{ fontSize: 12, color: colors.orange, mt: 0.1, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: '0.65rem', color: colors.orange, lineHeight: 1.4 }}>
+              <strong>Quarantined:</strong> HMM regime is affected by sticky-crisis bug. P(crisis→low_vol)=0% in transition matrix. Do not use for trading decisions.
             </Typography>
           </Box>
         </Box>
@@ -281,7 +327,7 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
         bands.push({
           x1: chartData[bandStart].date,
           x2: chartData[i - 1].date,
-          color: regimeColors[currentRegime] || colors.textSecondary,
+          color: regimeColors[currentRegime] || 'text.secondary',
         });
         if (i < chartData.length) {
           bandStart = i;
@@ -295,7 +341,7 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
 
   if (chartData.length === 0) {
     return (
-      <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, mb: 2 }}>
+      <Card sx={{ mb: 2 }}>
         <CardContent>
           <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 1 }} />
         </CardContent>
@@ -311,20 +357,20 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
   const vixPadding = (vixMax - vixMin) * 0.1;
 
   return (
-    <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, mb: 2 }}>
+    <Card sx={{ mb: 2 }}>
       <CardContent sx={{ pb: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             SPY & VIX — 90 Days
           </Typography>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box sx={{ width: 12, height: 2, bgcolor: colors.blue, borderRadius: 1 }} />
-              <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary }}>SPY</Typography>
+              <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>SPY</Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box sx={{ width: 12, height: 2, bgcolor: colors.orange, borderRadius: 1 }} />
-              <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary }}>VIX</Typography>
+              <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>VIX</Typography>
             </Box>
           </Box>
         </Box>
@@ -346,9 +392,9 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
               ))}
               <XAxis
                 dataKey="date"
-                axisLine={{ stroke: colors.border }}
+                axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }}
                 tickLine={false}
-                tick={{ fill: colors.textSecondary, fontSize: 10 }}
+                tick={{ fill: '#64748b', fontSize: 10 }}
                 tickFormatter={(val) => formatDateShort(val)}
                 interval={Math.floor(chartData.length / 6)}
               />
@@ -373,13 +419,15 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'rgba(15, 18, 24, 0.95)',
-                  border: `1px solid ${colors.border}`,
+                  backgroundColor: 'var(--mui-palette-background-paper, rgba(255, 255, 255, 0.95))',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
                   borderRadius: 4,
                   fontSize: 12,
                   fontFamily: monoFont,
+                  color: '#1e293b',
                 }}
-                labelStyle={{ color: colors.text }}
+                labelStyle={{ color: '#1e293b' }}
+                itemStyle={{ color: '#475569' }}
                 formatter={(value, name) => [
                   typeof value === 'number' ? value.toFixed(2) : String(value),
                   name === 'spy' ? 'SPY' : 'VIX',
@@ -412,11 +460,19 @@ const MainChart = memo(function MainChart({ spyHistory, vixHistory, regimeHistor
           {(['low_vol', 'high_vol', 'crisis'] as const).map((regime) => (
             <Box key={regime} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box sx={{ width: 10, height: 6, bgcolor: regimeColors[regime], borderRadius: 0.5 }} />
-              <Typography sx={{ fontSize: '0.55rem', color: colors.textSecondary }}>
+              <Typography sx={{ fontSize: '0.55rem', color: 'text.secondary' }}>
                 {regimeLabels[regime]}
               </Typography>
             </Box>
           ))}
+        </Box>
+
+        {/* Regime data warning */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 1.5, justifyContent: 'center' }}>
+          <WarningAmberIcon sx={{ fontSize: 12, color: colors.orange }} />
+          <Typography sx={{ fontSize: '0.6rem', color: colors.orange, fontStyle: 'italic' }}>
+            Regime labels from approximately March 27 onward are affected by the HMM sticky-crisis bug. The crisis state is overcalled.
+          </Typography>
         </Box>
       </CardContent>
     </Card>
@@ -464,18 +520,18 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
   const hasEnoughData = totalResolved >= MIN_PREDICTIONS_FOR_ACCURACY;
 
   return (
-    <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+    <Card sx={{ height: '100%' }}>
       <CardContent>
-        <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
+        <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
           Prediction Accuracy
         </Typography>
 
         {!hasEnoughData ? (
           <Box sx={{ py: 3, textAlign: 'center' }}>
-            <Typography sx={{ fontSize: '0.9rem', color: colors.textSecondary, mb: 1 }}>
+            <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary', mb: 1 }}>
               Not enough data yet
             </Typography>
-            <Typography sx={{ fontSize: '0.75rem', color: colors.textSecondary, fontFamily: monoFont }}>
+            <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', fontFamily: monoFont }}>
               {totalResolved} / {MIN_PREDICTIONS_FOR_ACCURACY} predictions resolved
             </Typography>
           </Box>
@@ -483,7 +539,7 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
           <>
             {/* Hit Rate */}
             <Box sx={{ mb: 2 }}>
-              <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Hit Rate
               </Typography>
               <Typography
@@ -498,14 +554,14 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
               >
                 {stats.hitRate !== null ? `${(stats.hitRate * 100).toFixed(1)}%` : '--'}
               </Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont }}>
+              <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', fontFamily: monoFont }}>
                 N={totalResolved}
               </Typography>
             </Box>
 
             {/* Last 30 dots */}
             <Box sx={{ mb: 2 }}>
-              <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.75 }}>
+              <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.75 }}>
                 Last {stats.last30.length}
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4 }}>
@@ -528,7 +584,7 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
 
             {/* Cumulative accuracy chart */}
             <Box>
-              <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
+              <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
                 Cumulative
               </Typography>
               <Box sx={{ height: 60, mx: -1 }}>
@@ -536,7 +592,7 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
                   <LineChart data={stats.cumulative} margin={{ top: 2, right: 5, left: 5, bottom: 2 }}>
                     <YAxis domain={[0, 1]} hide />
                     {/* 50% reference line */}
-                    <ReferenceArea y1={0.5} y2={0.5} stroke={colors.textSecondary} strokeDasharray="3 3" fillOpacity={0} />
+                    <ReferenceArea y1={0.5} y2={0.5} stroke={'text.secondary'} strokeDasharray="3 3" fillOpacity={0} />
                     <Line
                       type="monotone"
                       dataKey="accuracy"
@@ -554,8 +610,8 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
 
         {/* Decay Alerts */}
         {alerts.length > 0 && (
-          <Box sx={{ mt: 2, pt: 2, borderTop: `1px solid ${colors.border}` }}>
-            <Typography sx={{ fontSize: '0.6rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+          <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
               Decay Alerts
             </Typography>
             {alerts.map((alert) => (
@@ -581,11 +637,11 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
                   }}>
                     {alert.alertLevel}
                   </Typography>
-                  <Typography sx={{ fontSize: '0.55rem', color: colors.textSecondary, fontFamily: monoFont }}>
+                  <Typography sx={{ fontSize: '0.55rem', color: 'text.secondary', fontFamily: monoFont }}>
                     {alert.source}
                   </Typography>
                 </Box>
-                <Typography sx={{ fontSize: '0.6rem', color: colors.text, lineHeight: 1.3 }}>
+                <Typography sx={{ fontSize: '0.6rem', color: 'text.primary', lineHeight: 1.3 }}>
                   {alert.alertMessage}
                 </Typography>
               </Box>
@@ -598,91 +654,48 @@ const AccuracyPanel = memo(function AccuracyPanel({ accuracy, alerts }: Accuracy
 });
 
 // =============================================================================
-// REGIME CARD (unchanged)
+// VOL METRICS CARD (VIX + IV-RV spread as standalone numbers)
 // =============================================================================
 
-interface RegimeCardProps {
-  regime: SnapshotRegime | null;
+interface VolMetricsCardProps {
+  vix: number | null;
+  rv: number | null;
+  ivRvSpread: number | null;
 }
 
-const RegimeCard = memo(function RegimeCard({ regime }: RegimeCardProps) {
-  if (!regime) {
-    return (
-      <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
-        <CardContent>
-          <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 1 }} />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const color = regimeColors[regime.label] || colors.textSecondary;
-  const probs = regime.probs || {};
-
+const VolMetricsCard = memo(function VolMetricsCard({ vix, rv, ivRvSpread }: VolMetricsCardProps) {
   return (
-    <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
-      <CardContent sx={{ py: 2.5 }}>
-        <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-          {/* Current State */}
-          <Box sx={{ minWidth: 140 }}>
-            <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
-              Current Regime
+    <Card sx={{ mb: 2 }}>
+      <CardContent sx={{ py: 2 }}>
+        <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <Box>
+            <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
+              VIX
             </Typography>
-            <Typography
-              sx={{
-                fontSize: '2rem',
-                fontWeight: 700,
-                color,
-                lineHeight: 1,
-                textShadow: `0 0 20px ${color}40`,
-              }}
-            >
-              {regimeLabels[regime.label] || regime.label.toUpperCase()}
-            </Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, fontFamily: monoFont, mt: 1 }}>
-              {formatDate(regime.timestamp)} {formatTime(regime.timestamp)}
+            <Typography sx={{ fontSize: '1.5rem', fontFamily: monoFont, fontWeight: 600, color: 'text.primary' }}>
+              {vix !== null ? vix.toFixed(1) : '--'}
             </Typography>
           </Box>
-
-          {/* Probability Bars */}
-          <Box sx={{ flex: 1, maxWidth: 400 }}>
-            <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1.5 }}>
-              State Probabilities
+          <Box>
+            <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
+              21d Realized Vol
             </Typography>
-            {(['low_vol', 'high_vol', 'crisis'] as const).map(key => {
-              const prob = (probs as RegimeProbs)[key] || 0;
-              const barColor = regimeColors[key];
-              return (
-                <Box key={key} sx={{ mb: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
-                    <Typography sx={{ fontSize: '0.7rem', color: barColor, fontWeight: 500 }}>
-                      {regimeLabels[key]}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.7rem', fontFamily: monoFont, color: colors.text }}>
-                      {(prob * 100).toFixed(1)}%
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      height: 6,
-                      bgcolor: 'rgba(148, 163, 184, 0.1)',
-                      borderRadius: 0.5,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        height: '100%',
-                        width: `${prob * 100}%`,
-                        bgcolor: barColor,
-                        borderRadius: 0.5,
-                        transition: 'width 0.5s ease-out',
-                      }}
-                    />
-                  </Box>
-                </Box>
-              );
-            })}
+            <Typography sx={{ fontSize: '1.5rem', fontFamily: monoFont, fontWeight: 600, color: 'text.primary' }}>
+              {rv !== null ? `${rv.toFixed(1)}%` : '--'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.5 }}>
+              IV-RV Spread
+            </Typography>
+            <Typography sx={{
+              fontSize: '1.5rem',
+              fontFamily: monoFont,
+              fontWeight: 600,
+              color: ivRvSpread !== null && ivRvSpread > 0 ? colors.green : ivRvSpread !== null && ivRvSpread < 0 ? colors.red : 'text.primary',
+            }}>
+              {ivRvSpread !== null ? `${ivRvSpread > 0 ? '+' : ''}${ivRvSpread.toFixed(1)}pp` : '--'}
+            </Typography>
           </Box>
         </Box>
       </CardContent>
@@ -706,7 +719,7 @@ const NewsCard = memo(function NewsCard({ news }: NewsCardProps) {
       sx={{
         p: 1.5,
         borderLeft: `4px solid ${borderColor}`,
-        bgcolor: colors.cardBg,
+        bgcolor: 'background.paper',
         borderRadius: '0 4px 4px 0',
         mb: 1,
       }}
@@ -714,7 +727,7 @@ const NewsCard = memo(function NewsCard({ news }: NewsCardProps) {
       <Typography
         sx={{
           fontSize: '0.8rem',
-          color: colors.text,
+          color: 'text.primary',
           lineHeight: 1.4,
           display: '-webkit-box',
           WebkitLineClamp: 2,
@@ -725,7 +738,7 @@ const NewsCard = memo(function NewsCard({ news }: NewsCardProps) {
         {news.headline}
       </Typography>
       <Box sx={{ display: 'flex', gap: 1.5, mt: 0.75, alignItems: 'center' }}>
-        <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont }}>
+        <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', fontFamily: monoFont }}>
           {formatDate(news.scoredAt)}
         </Typography>
         <Typography
@@ -733,7 +746,7 @@ const NewsCard = memo(function NewsCard({ news }: NewsCardProps) {
             fontSize: '0.7rem',
             fontFamily: monoFont,
             fontWeight: 600,
-            color: news.sentiment > 0.1 ? colors.green : news.sentiment < -0.1 ? colors.red : colors.textSecondary,
+            color: news.sentiment > 0.1 ? colors.green : news.sentiment < -0.1 ? colors.red : 'text.secondary',
           }}
         >
           {news.sentiment > 0 ? '+' : ''}{news.sentiment.toFixed(2)}
@@ -752,7 +765,7 @@ const NewsCard = memo(function NewsCard({ news }: NewsCardProps) {
                      'rgba(148, 163, 184, 0.15)',
             color: news.magnitude === 'major' ? colors.red :
                    news.magnitude === 'material' ? colors.orange :
-                   colors.textSecondary,
+                   'text.secondary',
           }}
         >
           {news.magnitude}
@@ -773,12 +786,12 @@ interface FomcCardProps {
 const FomcCard = memo(function FomcCard({ fomc }: FomcCardProps) {
   if (!fomc) {
     return (
-      <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+      <Card sx={{ height: '100%' }}>
         <CardContent>
-          <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
+          <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
             Latest FOMC
           </Typography>
-          <Typography sx={{ color: colors.textSecondary }}>No data</Typography>
+          <Typography sx={{ color: 'text.secondary' }}>No data</Typography>
         </CardContent>
       </Card>
     );
@@ -788,14 +801,14 @@ const FomcCard = memo(function FomcCard({ fomc }: FomcCardProps) {
   const markerPosition = ((score + 1) / 2) * 100;
 
   return (
-    <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+    <Card sx={{ height: '100%' }}>
       <CardContent>
-        <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
+        <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
           Latest FOMC
         </Typography>
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-          <Typography sx={{ fontSize: '1rem', fontWeight: 600, fontFamily: monoFont, color: colors.text }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 600, fontFamily: monoFont, color: 'text.primary' }}>
             {formatDateFull(fomc.eventDate)}
           </Typography>
           <Box
@@ -834,7 +847,7 @@ const FomcCard = memo(function FomcCard({ fomc }: FomcCardProps) {
                 position: 'absolute',
                 inset: 0,
                 borderRadius: 1,
-                background: `linear-gradient(to right, ${colors.green}, ${colors.textSecondary}, ${colors.red})`,
+                background: `linear-gradient(to right, ${colors.green}, ${'text.secondary'}, ${colors.red})`,
                 opacity: 0.4,
               }}
             />
@@ -845,7 +858,7 @@ const FomcCard = memo(function FomcCard({ fomc }: FomcCardProps) {
                 top: 0,
                 bottom: 0,
                 width: 1,
-                bgcolor: colors.textSecondary,
+                bgcolor: 'text.secondary',
               }}
             />
             <Box
@@ -857,22 +870,22 @@ const FomcCard = memo(function FomcCard({ fomc }: FomcCardProps) {
                 width: 12,
                 height: 12,
                 borderRadius: '50%',
-                bgcolor: score > 0.2 ? colors.red : score < -0.2 ? colors.green : colors.textSecondary,
-                border: `2px solid ${colors.text}`,
-                boxShadow: `0 0 8px ${score > 0.2 ? colors.red : score < -0.2 ? colors.green : colors.textSecondary}`,
+                bgcolor: score > 0.2 ? colors.red : score < -0.2 ? colors.green : 'text.secondary',
+                border: `2px solid ${'text.primary'}`,
+                boxShadow: `0 0 8px ${score > 0.2 ? colors.red : score < -0.2 ? colors.green : 'text.secondary'}`,
               }}
             />
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-            <Typography sx={{ fontSize: '0.6rem', fontFamily: monoFont, color: colors.textSecondary }}>-1</Typography>
-            <Typography sx={{ fontSize: '0.75rem', fontFamily: monoFont, fontWeight: 600, color: colors.text }}>
+            <Typography sx={{ fontSize: '0.6rem', fontFamily: monoFont, color: 'text.secondary' }}>-1</Typography>
+            <Typography sx={{ fontSize: '0.75rem', fontFamily: monoFont, fontWeight: 600, color: 'text.primary' }}>
               {score > 0 ? '+' : ''}{score.toFixed(2)}
             </Typography>
-            <Typography sx={{ fontSize: '0.6rem', fontFamily: monoFont, color: colors.textSecondary }}>+1</Typography>
+            <Typography sx={{ fontSize: '0.6rem', fontFamily: monoFont, color: 'text.secondary' }}>+1</Typography>
           </Box>
         </Box>
 
-        <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont }}>
+        <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', fontFamily: monoFont }}>
           {getDataAge(fomc.eventDate)}
         </Typography>
       </CardContent>
@@ -914,20 +927,25 @@ export default function SignalEngine() {
             </Typography>
           )}
           {lastUpdated && (
-            <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont }}>
+            <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', fontFamily: monoFont }}>
               Updated {formatTime(lastUpdated.toISOString())}
             </Typography>
           )}
         </Box>
       </Box>
 
-      {/* Today's Lean - TOP */}
-      <TodaysLeanCard prediction={data?.latestPrediction || null} />
+      {/* Combined Lean & Regime Card */}
+      <LeanAndRegimeCard
+        prediction={data?.latestPrediction || null}
+        regime={data?.regime || null}
+      />
 
-      {/* Regime Card */}
-      <Box sx={{ mb: 2 }}>
-        <RegimeCard regime={data?.regime || null} />
-      </Box>
+      {/* Vol Metrics */}
+      <VolMetricsCard
+        vix={data?.vol.vix ?? null}
+        rv={data?.vol.rv ?? null}
+        ivRvSpread={data?.vol.ivRvSpread ?? null}
+      />
 
       {/* Main Chart */}
       <MainChart
@@ -945,9 +963,9 @@ export default function SignalEngine() {
         />
 
         {/* News Feed */}
-        <Card sx={{ bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
+        <Card sx={{}}>
           <CardContent>
-            <Typography sx={{ fontSize: '0.7rem', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
+            <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
               Recent News Scores
             </Typography>
             <Box sx={{ maxHeight: 240, overflowY: 'auto', pr: 1 }}>
@@ -956,13 +974,13 @@ export default function SignalEngine() {
                   <NewsCard key={`${item.scoredAt}-${idx}`} news={item} />
                 ))
               ) : (
-                <Typography sx={{ color: colors.textSecondary, fontSize: '0.8rem' }}>
+                <Typography sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
                   No recent news scores
                 </Typography>
               )}
             </Box>
             {data?.news && data.news.length > 0 && (
-              <Typography sx={{ fontSize: '0.65rem', color: colors.textSecondary, fontFamily: monoFont, mt: 1.5 }}>
+              <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', fontFamily: monoFont, mt: 1.5 }}>
                 Latest: {getDataAge(data.news[0].scoredAt)}
               </Typography>
             )}

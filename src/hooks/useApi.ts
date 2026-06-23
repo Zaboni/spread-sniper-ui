@@ -166,3 +166,149 @@ export function useRegimeHistory(days: number = 90) {
     }>;
   }>(`/regime-history?days=${days}`);
 }
+
+// =============================================================================
+// UNIFIED SNAPSHOT (Phase 4: both systems side by side)
+// =============================================================================
+
+export interface UnifiedSnapshot {
+  timestamp: string;
+
+  signalEngine: {
+    regime: {
+      label: string;
+      probs: Record<string, number>;
+      timestamp: string;
+      quarantined: boolean;
+      quarantineReason: string;
+    } | null;
+    vol: {
+      vix: number | null;
+      rv: number | null;
+      ivRvSpread: number | null;
+      methodology: string;
+    };
+    fomc: {
+      eventDate: string;
+      eventType: string;
+      hawkishScore: number | null;
+    } | null;
+    news: Array<{
+      headline: string;
+      scoredAt: string;
+      sentiment: number;
+      magnitude: string;
+    }>;
+    decayAlerts: Array<{
+      id: string;
+      createdAt: string;
+      source: string;
+      alertLevel: string;
+      alertMessage: string;
+    }>;
+    prediction: {
+      id: string;
+      madeAt: string;
+      horizon: string;
+      predictedDirection: string;
+      predictedProb: number;
+      source: string;
+      regimeAtPred: string | null;
+    } | null;
+  };
+
+  spreadSniper: {
+    regime: {
+      label: string;
+      confidence: number;
+      timestamp: string;
+    } | null;
+    lastClassificationTimestamp: string | null;
+    ivRvSpread: number | null;
+    ivRvMethodology: string;
+    trading: {
+      openPositions: number;
+      accountValue: number;
+      exposure: number;
+      exposurePercent: number;
+      weeklyPnL: number;
+      weeklyDrawdownPercent: number;
+      circuitBreakerActive: boolean;
+    };
+  };
+
+  disagreements: {
+    regime: {
+      disagrees: boolean | null;
+      seLabel: string | null;
+      ssLabel: string | null;
+      seQuarantined: boolean;
+      quarantineReason: string;
+    };
+    ivRv: {
+      seValue: number | null;
+      ssValue: number | null;
+      divergence: number | null;
+      methodologyNote: string;
+    };
+  };
+
+  phase3Rules: Array<{
+    name: string;
+    enabled: boolean;
+    status: string;
+    reason: string;
+    currentValue: string;
+    threshold: string;
+    action: string;
+  }>;
+
+  _timings?: Record<string, number>;
+}
+
+export function useUnifiedSnapshot(pollInterval = 60000) {
+  const [state, setState] = useState<{
+    data: UnifiedSnapshot | null;
+    loading: boolean;
+    error: string | null;
+    lastUpdated: Date | null;
+  }>({
+    data: null,
+    loading: true,
+    error: null,
+    lastUpdated: null,
+  });
+
+  const fetchData = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/unified/snapshot`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setState({
+        data,
+        loading: false,
+        error: null,
+        lastUpdated: new Date(),
+      });
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+
+    if (pollInterval > 0) {
+      const interval = setInterval(fetchData, pollInterval);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, pollInterval]);
+
+  return { ...state, refetch: fetchData };
+}
